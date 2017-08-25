@@ -5,6 +5,7 @@ from PyQt5.QtCore import QAbstractTableModel,Qt,QVariant
 import sys, os, operator, requests
 from lxml import html
 import pickle
+import greq
 
 class ComboBoxDelegate(QStyledItemDelegate):
     def __init__(self, owner):
@@ -378,13 +379,13 @@ class MyTableModel(QAbstractTableModel):
                 renameList = [el for el in self.arraydata if el[0]]
                 for el in renameList:
 			ext = '.' + os.path.basename(el[1]).split('.')[-1:][0]
-			renameTo = os.path.join(os.path.dirname(el[1]),el[2]) + ext
+			renameTo = os.path.join(os.path.dirname(el[1]),el[2])
 			print renameTo
-			if os.path.isfile(renameTo):
+			if os.path.isfile(renameToi + ext):
 				i = 0
-				while os.path.exists(renameTo):
+				while os.path.exists(renameTo + ext):
 					i+=1 
-				#os.rename(el[1],renameTo
+				os.rename(el[1],renameTo + ('-(%s)'%i if i else '') + ext)
 				#os.rename(el[1],os.path.join(os.path.dirname(el[1]),el[2]))
 			self.arraydata[self.arraydata.index(el)][5] = False
 	

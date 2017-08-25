@@ -13,7 +13,7 @@ class FeedbackCounter:
         return r
 
 
-def kp_search(request):
+def kp_parser(request):
 	kp_names = list()
 	kp_original_names = list()
 	years = list()

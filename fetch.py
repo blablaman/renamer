@@ -16,6 +16,7 @@ import subprocess
 import threading
 import time
 import urllib2
+from subprocess import Popen
 
 VERSION = "2.64"
 ANONIMITY_LEVELS = {"elite": "high", "anonymous": "medium", "transparent": "low"}
@@ -57,7 +58,7 @@ def worker(queue, plist):
             if not all((proxy["IP"], proxy["PORT"])) or re.search(r"[^:/\w.]", candidate):
                 continue
             if not FALLBACK_METHOD:
-                process = subprocess.Popen("curl -m %d -A \"%s\" --proxy %s %s" % (TIMEOUT, USER_AGENT, candidate, IFCONFIG_URL), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                process = Popen("curl -m %d -A \"%s\" --proxy %s %s" % (TIMEOUT, USER_AGENT, candidate, IFCONFIG_URL), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 result, _ = process.communicate()
             elif proxy["type"] in ("http", "https"):
                 opener = urllib2.build_opener(urllib2.ProxyHandler({"http": candidate, "https": candidate}))
@@ -91,7 +92,7 @@ def run():
             IFCONFIG_URL = candidate
             break
 
-    process = subprocess.Popen("curl -m %d -A \"%s\" %s" % (TIMEOUT, USER_AGENT, IFCONFIG_URL), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = Popen("curl -m %d -A \"%s\" %s" % (TIMEOUT, USER_AGENT, IFCONFIG_URL), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, _ = process.communicate()
     FALLBACK_METHOD = re.search(r"\d+\.\d+\.\d+\.\d+", stdout or "") is None
 

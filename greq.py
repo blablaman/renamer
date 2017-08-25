@@ -1,47 +1,62 @@
 # -*- coding: utf-8 -*-
-import grequests
+import fetch
 import helper
 import time
-from helper import list_files,normilize,kp_search,FeedbackCounter
+import random
+from helper import list_files,normilize,kp_parser,FeedbackCounter
+import requests
 
-base_url = 'https://www.kinopoisk.ru/index.php?first=no&what=&kp_query=%s'
-#nlist = [x for x in xrange(83)]
-plist = [u'http://217.23.156.251:80', u'http://190.60.234.131:3128', u'http://177.206.37.217:53281', u'http://112.85.1.94:9131', u'http://64.77.242.74:3128', u'http://62.138.16.87:3128', u'http://121.42.176.133:3128', u'http://193.193.68.2:3128', u'http://178.215.188.223:53281', u'http://162.243.18.46:3128', u'http://1.52.160.100:53281', u'http://202.152.40.28:8080', u'http://104.236.65.142:8080', u'http://190.131.203.90:3128', u'http://103.24.150.242:53281', u'http://186.251.180.33:8080', u'http://187.189.60.141:3130', u'http://158.69.198.191:3128', u'http://41.222.57.164:53281', u'http://103.250.147.22:8080', u'http://123.49.53.210:8080', u'http://125.89.52.189:8118', u'http://109.121.161.44:53281']
-
-rss = []
+#plist = [u'http://163.172.156.247:3128', u'http://85.255.0.100:3128', u'http://217.23.156.173:80', u'http://188.0.226.248:53281', u'http://153.122.75.53:8080', u'http://191.252.100.152:80', u'http://111.13.7.118:80', u'http://112.5.56.108:3128', u'http://188.166.252.247:3128', u'http://128.199.192.252:80', u'http://202.51.182.106:8080', u'http://91.234.125.208:53281', u'http://111.13.2.131:80', u'http://190.121.29.235:65309', u'http://216.100.88.228:8080', u'http://216.100.88.229:8080', u'http://197.232.17.83:8080', u'http://122.143.150.202:8998', u'http://223.68.1.38:8000', u'http://95.143.143.59:53281', u'http://139.59.125.77:80', u'http://181.112.228.126:53281']
+#nalist = [normilize(n[0]) for n in helper.list_files('/Volumes/Multimedia/Movies/', includeSubdirs=False)]
+#nalist = nalist[:10]
 fbc = FeedbackCounter()
 
-nlist = [normilize(n[0]) for n in helper.list_files('/Volumes/Multimedia/Movies/', includeSubdirs=False)]
-#print nlist
-nlist = nlist[:20]
+def exception_handler(request, exception):
+	import grequests
+	session = requests.Session()
+	print exception
+	r = [grequests.get(request.url, proxies={"https" : random.choice(plist)}, timeout=10, callback=fbc.feedback, session = session)]
+	result = grequests.map(r, exception_handler=exception_handler)
+	del grequests
+	return result[0]
 
-try:
-	while True:
-		rs = []
-		for p in plist:
-			name = nlist.pop()
-			rs.append(grequests.get(base_url % name, proxies={"https" : p}, callback=fbc.feedback,timeout=10))
-			#print u"Name: %s, proxy: %s" % (name.encode('ascii','ignore'), p)
-			#print name + ' ==> ' + p.encode('ascii','ignore')
-		rss.append(rs)
-except Exception as e:
-	print str(e)
-	print len(nlist)
-	if rs:
-		rss.append(rs)
+def kinopoiskSearch(namesList, proxyList):
+	import grequests
+	session = requests.Session()
+	base_url = 'https://www.kinopoisk.ru/index.php?first=no&what=&kp_query=%s'
+	rss = []
+	nlist = namesList[:]
+	try:
+		while True:
+			rs = []
+			for p in proxyList:
+				name = nlist.pop()
+				rs.append(grequests.get(base_url % name, proxies={"https" : p}, callback=fbc.feedback,timeout=10, session = session))
+			rss.append(rs)
+	except Exception as e:
+		print e
+		print len(nlist)
+		if rs:
+			rss.append(rs)
 
-requests = []
-for rs in rss:
-	requests += grequests.map(rs)
-	time.sleep(1)
+	reqs = []
+	for rs in rss:
+		reqs += grequests.map(rs, exception_handler=exception_handler)
+		time.sleep(1)
 
-print requests
-#l = [x for x in requests if x]
-#print l
-res = list(map(kp_search, l))
-print res
+	print reqs
 
-#print kp_search(grequests.map(rss[1][6:12])[0])
+	res = list(map(kp_parser, reqs))
+
+	del grequests
+	return res
+
+#plist = fetch.run()
+#res = kinopoiskSearch(nalist, plist)
+#for i in range(len(nalist)):
+	#print (res[i][0] if res else u"None") 
+	#nalist[i] + u" ==> " + (res[i][0] if res else u"None") 
+
 
 
 	
