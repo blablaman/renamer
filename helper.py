@@ -41,11 +41,30 @@ def kp_parser(request):
 			return []
 
 		for i in range(len(ps)):
-			result.append(unicode(i) +u'. '+ kp_names[i] +u' ['+ kp_original_names[i] +u'] ('+ years[i] +u')')
+			result.append(unicode(i) +u'. '+ kp_names[i] + (u' ['+ kp_original_names[i] +u']' if kp_original_names[i] != '' else '') +' ('+ years[i] +u')')
 	else:
 		print 'no response'
 		return []
 	return result
+
+def duckParser(response):
+	namesList = list()
+	if response:
+                tree = html.fromstring(response.text)
+		a = tree.xpath('.//a[@class="result__a"]/text()')
+                if a:
+                        for el in a:	
+				temp_name = el.split(')')[0]
+				if len(temp_name) != el:
+					temp_name+=')'
+					if len(temp_name.split('/')) > 1:
+						namesList.append(temp_name.split('/')[1])
+				#namesList.append(unicode(el))
+	else:
+		print "no duck"
+	return namesList		
+
+			
 
 
 def list_files(directory, includeSubdirs = True):

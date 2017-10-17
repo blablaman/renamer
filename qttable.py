@@ -5,7 +5,9 @@ from PyQt5.QtCore import QAbstractTableModel,Qt,QVariant
 import sys, os, operator, requests
 from lxml import html
 import pickle
-import greq
+from greq import KinopoiskGRequests
+from fetch import run
+from helper import normilize, get_year
 
 class ComboBoxDelegate(QStyledItemDelegate):
     def __init__(self, owner):
@@ -15,6 +17,8 @@ class ComboBoxDelegate(QStyledItemDelegate):
         self.editor = QComboBox(parent)
 	print index.data(Qt.EditRole)
         self.editor.addItems(index.model().data(index,Qt.EditRole))
+	self.editor.currentIndexChanged.connect(self.onCurrentIndexChanged)	
+	print "creareEditor"
         return self.editor
     #def paint(self, painter, option, index):
     #    value = index.model().data(index,QtCore.Qt.DisplayRole)
@@ -30,12 +34,23 @@ class ComboBoxDelegate(QStyledItemDelegate):
 	if len(value):
 		eindex = index.model().index(index.row(),4) 
 		editor.setCurrentIndex(eindex.data(Qt.DisplayRole))
-		editor.showPopup()
+		if not self.sender():
+			editor.showPopup()
+	print "setEditorData"
     def setModelData(self, editor, model, index):
         value = editor.currentText()
         model.setData(index.model().index(index.row(),4), editor.currentIndex(), Qt.EditRole)
+	model.setData(index.model().index(index.row(),2), editor.currentText()[3:], Qt.EditRole)
+	#model.dataChanged.emit(model.createIndex(0, 0), model.createIndex(model.rowCount(0), model.columnCount(0)))
+	model.layoutChanged.emit()
+	print "setModelData"
     def updateEditorGeometry(self, editor, option, index):
         editor.setGeometry(option.rect)
+
+    def onCurrentIndexChanged(self):
+	print "onCurrentIndexChanged"
+	self.commitData.emit(self.sender())
+		
 
 class CheckBoxHeader(QHeaderView):
     clicked=QtCore.pyqtSignal(bool)
@@ -90,7 +105,8 @@ class MainWindow(QWidget):
 
 	    self.openBtn = QPushButton("&Open")
 	    self.searchBtn = QPushButton("KP Search")
-	    self.renameBtn = QPushButton("Rename")
+	    self.renameBtn = QPushButton("Rename")  
+	    self.unRenameBtn = QPushButton("unRename")  
 	    self.statusBar = QStatusBar()
 	    # create table
 	    self.get_table_data()
@@ -102,6 +118,7 @@ class MainWindow(QWidget):
 	    hbox.addWidget(self.openBtn)
 	    hbox.addWidget(self.searchBtn)
 	    hbox.addWidget(self.renameBtn)
+	    hbox.addWidget(self.unRenameBtn)
 	    layout = QVBoxLayout()
 	    layout.addLayout(hbox)
 	    layout.addWidget(self.table) 
@@ -110,6 +127,7 @@ class MainWindow(QWidget):
 	    self.searchBtn.clicked.connect(self.buttonClicked)
 	    self.openBtn.clicked.connect(self.buttonClicked)
 	    self.renameBtn.clicked.connect(self.buttonClicked)
+	    self.unRenameBtn.clicked.connect(self.buttonClicked)
 	    self.statusBar.showMessage("hello")
 
 	def get_table_data(self):
@@ -182,7 +200,7 @@ class MainWindow(QWidget):
 	def buttonClicked(self):
 	    if self.sender().text() == "&Open":
 		#self.fileDlg.setOptions(QtGui.QFileDialog.DontUseNativeDialog)
-		oDir = QFileDialog.getExistingDirectory(self, "Select Directory","/Volumes/Multimedia",QFileDialog.DontUseNativeDialog).encode('utf-8')
+		oDir = QFileDialog.getExistingDirectory(self, "Select Directory","/Volumes/Multimedia/dima_films/ФИЛЬМЫ/Фильмы",QFileDialog.DontUseNativeDialog).encode('utf-8')
 		print oDir
 		if oDir:
 			self.table.model().update(oDir)	
@@ -190,6 +208,8 @@ class MainWindow(QWidget):
 		self.table.model().kpUpdate()
 	    if self.sender().text() == "Rename":
 		self.table.model().rename()
+	    if self.sender().text() == "unRename":
+                self.table.model().unrename() 
 		
 	def closeEvent(self, event):
 		print 'closed'
@@ -213,8 +233,10 @@ class MyTableModel(QAbstractTableModel):
 		f.close()
 	    else:
 		self.arraydata = []
+	    
+	    self.arraydata[1][3] = ['1. hello','2. world','3. ismine']
 
-	    self.arraydata = []
+	    #self.arraydata = []
 	    self.headerdata = headerdata
 
 	def rowCount(self, parent): 
@@ -271,7 +293,11 @@ class MyTableModel(QAbstractTableModel):
 		    else:
 			return Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable
 	    else:
-		    return Qt.ItemIsSelectable
+		   if index.column() == 0:
+                        return Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable
+		   else:
+			return Qt.ItemIsSelectable
+
 	
 	def setData(self, index, value, role=Qt.EditRole):
 	    #if index.column() == 4 and 3:
@@ -284,8 +310,12 @@ class MyTableModel(QAbstractTableModel):
 			self.arraydata[index.row()][index.column()] = True
 		else:
 			self.arraydata[index.row()][index.column()] = False
+	    #elif index.column == 3:
+		    #self.arraydata[index.row()][index.column()] = value
+		    #self.arraydata[index.row()][2] = value[:-4]
 	    else:
 		    self.arraydata[index.row()][index.column()] = value
+	    self.layoutChanged.emit()
 	    return True
 
 	def sort(self, Ncol, order):
@@ -297,36 +327,6 @@ class MyTableModel(QAbstractTableModel):
 		self.arraydata.reverse()
 	    self.layoutChanged.emit()
 
-	def kp_search(self, name):
-		kp_names = list()
-		kp_original_names = list()
-		years = list()
-		result = list()
-		url = 'https://www.kinopoisk.ru/index.php?first=no&what=&kp_query=%s' % (name)
-		r = requests.get(url)
-		tree = html.fromstring(r.text)
-		ps = tree.xpath('.//div[@class="info" and child::p/a/@data-type="film"]')
-		if ps:
-			for p in ps:
-			    kp_names.append(p.xpath('./p/a[@data-type="film"]/text()')[0])
-			    try:
-				    years.append(p.xpath('.//span[@class="year"]/text()')[0])
-			    except:
-				    years.append('')
-			    try:
-				    n_t = p.xpath('./span[1]/text()')[0].split(',')[0]
-			    except:
-				    n_t = ''
-			    if n_t.split(' ')[-1:][0] == u'мин':
-				kp_original_names.append('')
-			    else:
-				kp_original_names.append(n_t)
-		else:
-			return []
-
-		for i in range(len(ps)):
-			result.append(unicode(i) +u'. '+ kp_names[i] +u' ['+ kp_original_names[i] +u'] ('+ years[i] +u')')
-		return result
 
 
 	def list_files(self, directory):
@@ -338,70 +338,95 @@ class MyTableModel(QAbstractTableModel):
 		if (len(files) > 0):
 		    for f in files:
 			if f.split('.')[-1:][0] in ext:
-				r.append(subdir + "/" + f)
+				r.append((subdir + "/" + f).decode('utf-8'))
 	    return r
 	
-	def get_year(self, s):
-		year = ''
-		for i in range(len(s)):
-			if s[i].isdigit():
-				year = year + s[i]
-			else:
-				if len(year) < 4:
-					year = ''
-				else: #if len(year) == 4:
-					if year[:2] == '19' or year[:2] == '20':
-						return year
-		return ''
-
-	def normilize(self, file_name):
-	        name = file_name.replace('.',' ').replace('_',' ')
-		year = self.get_year(name)
-		if year:
-			name = name[:name.find(year)]
-			name += ' (' + year + ')'	
-		return name
-
-
 	def update(self, directory):
 	    #directory = ''
 	    self.arraydata = []
 	    filesList = self.list_files(directory)
 	    for mediaFile in filesList:
 		curName = mediaFile.split('/')[-1:][0]
-		curRename = self.normilize(curName)
+		curRename = normilize(curName)
 		kpList = []#self.kp_search(curName) #['1','2','3']
 	   	self.arraydata.append([False, mediaFile, curRename, kpList, 0, True])
 	    self.layoutChanged.emit()
 
         def rename(self):
 		print 'Ren func'
-                renameList = [el for el in self.arraydata if el[0]]
+		if os.path.exists('renamelog'): 
+			with open('renamelog','rb') as rl:
+				logList = pickle.load(rl)
+		else:
+			logList = []
+					
+                renameList = [el for el in self.arraydata if el[0] and el[5]]
                 for el in renameList:
 			ext = '.' + os.path.basename(el[1]).split('.')[-1:][0]
 			renameTo = os.path.join(os.path.dirname(el[1]),el[2])
-			print renameTo
-			if os.path.isfile(renameToi + ext):
+			#print renameTo
+			if os.path.isfile(renameTo + ext):
 				i = 0
 				while os.path.exists(renameTo + ext):
 					i+=1 
 				os.rename(el[1],renameTo + ('-(%s)'%i if i else '') + ext)
-				#os.rename(el[1],os.path.join(os.path.dirname(el[1]),el[2]))
-			self.arraydata[self.arraydata.index(el)][5] = False
-	
+				logList.append([el[1], renameTo + ('-(%s)'%i if i else '') + ext])
+				print el[1], renameTo + ('-(%s)'%i if i else '') + ext
+				os.rename(el[1], renameTo + ('-(%s)'%i if i else '') + ext)
+				self.arraydata[self.arraydata.index(el)][5] = False
+			# os.rename(el[1],renameTo + ext) #os.path.join(os.path.dirname(el[1]),el[2]))
+			else:
+				print el[1], renameTo + ext 
+				os.rename(el[1], renameTo + ext)
+				logList.append([el[1], renameTo + ext])
+				self.arraydata[self.arraydata.index(el)][5] = False
+
+		with open('renamelog', 'wb') as rl:
+			pickle.dump(logList, rl)
+			
+	def unrename(self):
+		if os.path.exists('renamelog'):
+                        with open('renamelog','rb') as rl:
+                                logList = pickle.load(rl)
+			renameList = [el for el in self.arraydata if el[0] and (not el[5])]
+			if logList and renameList: 
+				renamedList = [os.path.basename(el[1])[:-4] for el in logList]
+				print renamedList
+				for row in renameList:
+					print row[2]
+					if row[2] in renamedList:
+						index = renamedList.index(row[2])
+						print len(renamedList), len(logList), index
+						#os.rename(logList[index][1], logList[index][0])
+						print logList[index][1], logList[index][0]
+						os.rename(logList[index][1], logList[index][0])
+						del logList[index]	
+						del renamedList[index]
+						self.arraydata[self.arraydata.index(row)][5] = True
+				with open('renamelog','wb') as rl:
+					pickle.dump(logList, rl)
+                else:
+			return	
+
 	def kpUpdate(self):
 		if self.arraydata:
+			kpr = KinopoiskGRequests()
 			searchList = [el for el in self.arraydata if el[0]]
+			result = kpr.kinopoiskSearch([x[2] for x in searchList])
 			sLen = len(searchList)
+			print len(result)
+			print len(searchList)
 			for i in range(sLen):
-				searchList[i][3] = self.kp_search(searchList[i][2])
-				if i != (sLen-1):
-					self.parent().statusBar.showMessage("Films seaching: " +str(i+1) +"/"+str(sLen))
-				else:
-					self.parent().statusBar.showMessage("Films seaching: Done!", 2000)
-				self.parent().statusBar.updateGeometry()
-				QApplication.instance().processEvents()
-				self.layoutChanged.emit()
+				searchList[i][3] = result[i]
+			self.layoutChanged.emit()
+		#self.dataChanged.emit(self.createIndex(0, 0), self.createIndex(self.rowCount(0), self.columnCount(0)))
+
+				#if i != (sLen-1):
+					#self.parent().statusBar.showMessage("Films seaching: " +str(i+1) +"/"+str(sLen))
+				#else:
+					#self.parent().statusBar.showMessage("Films seaching: Done!", 2000)
+				#self.parent().statusBar.updateGeometry()
+				#QApplication.instance().processEvents()
 
 if __name__ == '__main__':
 	from PyQt5.QtWidgets import QApplication
